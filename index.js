@@ -1,42 +1,67 @@
 const { ensureDirExists } = require("./ensureDirExists");
-const  colors = require("./Colors");
+const { colors } = require("./Colors");
 
 var fs = require("fs").promises;
 exports.fs = fs;
 var fsSync = require("fs");
 var mysql = require("mysql");
-var Jimp = require('jimp'); 
+var Jimp = require("jimp");
+var readCount = 0;
+var writeCount = 0;
+var totalCount = 0;
 
 function pad(num, size) {
-    var s = num+"";
-    while (s.length < size) s = "0" + s;
-    return s;
+  var s = num + "";
+  while (s.length < size) s = "0" + s;
+  return s;
 }
 
-async function blur(imagePath, targetPath, i){
-    try {
-        if (fsSync.existsSync(targetPath)) {
-          // console.log(colors.Dim + 'Skipping ',imagePath);
-          return;
-        }
-      } catch(err) {
-        console.error(err)
-    }    
+const log = {
+  error   :msg=>console.error(colors.FgRed + msg),
+  debug   :msg=>console.debug(colors.FgWhite + msg),
+  success :msg=>console.log(colors.FgGreen + msg),
+  info    :msg=>console.info(colors.FgBlue + msg)
+}
 
-    console.log('Reading ',imagePath);
-    const img = await Jimp.read(imagePath); 
-    
-    const width = i.toprightx - i.topleftx;
-    const height = i.bottomlefty - i.toplefty;
-    const left = i.topleftx;
-    const top = i.toplefty;   
-    //pixelate function using callback function 
-    img.pixelate(15, left, top, width, height, function(err){ 
-        if (err) throw err; 
-        console.log(colors.FgGreen + "Writing ",targetPath);
-      }) 
-      .write(targetPath); 
-    };
+async function blur(imagePath, targetPath, imageInfo) {
+  try {
+    if (fsSync.existsSync(targetPath)) {
+      totalCount--;
+      log.info('Skipping ' + imagePath);
+      return;
+    }
+  } catch (err) {
+    log.error(err);
+  }
+
+  console.log(
+    `${colors.FgCyan}[${++readCount} / ${totalCount}] `,
+    colors.FgBlue + "Reading ",
+    imagePath
+  );
+  const img = await Jimp.read(imagePath);
+
+  const width = imageInfo.toprightx - imageInfo.topleftx;
+  const height = imageInfo.bottomlefty - imageInfo.toplefty;
+  const left = imageInfo.topleftx;
+  const top = imageInfo.toplefty;
+  
+  // console.debug( imageInfo );
+
+  img.pixelate(15, left, top, width, height, 
+    err=>{
+      if (err) {
+        log.error(err);
+        throw err;
+      }
+
+      console.log(
+        `${colors.FgCyan}[${++writeCount} / ${totalCount}] `,
+        colors.FgGreen + "Writing ",
+        targetPath
+      );
+    }).write(targetPath);
+}
 
 async function main() {
   const targetPath = "n:/Databases/OWN/Images/Moped training/pre-label";
@@ -52,7 +77,7 @@ async function main() {
   var dbConn = mysql.createConnection(db_config);
   dbConn.connect(err => {
     if (err) {
-      console.log(colors.FgRed + "error when connecting to db:", err);
+      log.error(colors.FgRed + "error when connecting to db:", err);
     }
   });
 
@@ -62,36 +87,44 @@ async function main() {
     }
   }
 
+  log.debug("Querying...");
   dbConn.query(
-    `   SELECT * 
-        FROM scl_image img
-        JOIN scl_imageset s ON img.scl_imagesetid = s.scl_imagesetid
-        JOIN scl_category cat ON cat.scl_categoryid = img.scl_categoryid
-        JOIN vehicle v ON v.kenteken = img.lp
-        ORDER BY len DESC
-        LIMIT 8840`,
+    `
+    SELECT basepath, filename, len, topleftx, toplefty, toprightx, toprighty, bottomrightx, bottomrighty, bottomleftx, bottomlefty, scl_category
+    FROM scl_image img
+    JOIN scl_imageset s ON img.scl_imagesetid = s.scl_imagesetid
+    JOIN scl_category cat ON cat.scl_categoryid = img.scl_categoryid
+    JOIN vehicle v ON v.kenteken = img.lp
+    WHERE img.conf > 600 AND country != ''
+    -- ORDER BY len DESC
+    -- LIMIT 0,150
+    `,
     async (error, results, fields) => {
-
+      log.debug("Querying done.");
       dbConn.destroy();
       if (error) throw error;
 
       const data = results;
+      totalCount = data.length;
 
+      log.debug("Updating paths...");
       data.forEach(e => {
         return (e.fullPath = e.basepath + e.filename.replace(".json", ".jpg"));
       });
 
       await asyncForEach(data, async e => {
-          const src = e.fullPath;
-          const dstPath = `${targetPath}/${e.scl_category}/`;
-          await ensureDirExists(dstPath);          
-          const dstFile = `${pad(e.len,6)}_${e.filename.replace(/^.*[\\\/]/, '').replace(".json",".jpg")}`;
-          const dst = dstPath + dstFile;                    
-          blur(src,dst, e)          
+        const src = e.fullPath;
+        const dstPath = `${targetPath}/${e.scl_category}/`;
+        await ensureDirExists(dstPath);
+        const dstFile = `${pad(e.len, 6)}_${e.filename.replace(/^.*[\\\/]/, "").replace(".json", ".jpg")}`;
+        const dst = dstPath + dstFile;
+        blur(src, dst, e);
       });
+
+      log.success('Done.');
+      log.debug('');
     }
   );
-
 }
 
 main();
