@@ -68,10 +68,8 @@ async function main() {
   await ensureDirExists(targetPath);
 
   const db_config = {
-    host: "10.4.1.23",
-    user: "scl_api.user",
-    password: "scl",
-    database: "scapeye"
+    ...require('./secrets'),
+    ...require('./secrets.dev')
   };
 
   var dbConn = mysql.createConnection(db_config);
@@ -97,7 +95,7 @@ async function main() {
     JOIN vehicle v ON v.kenteken = img.lp
     WHERE img.conf > 600 AND country != ''
     -- ORDER BY len DESC
-    -- LIMIT 0,150
+    LIMIT 0,10
     `,
     async (error, results, fields) => {
       log.debug("Querying done.");
