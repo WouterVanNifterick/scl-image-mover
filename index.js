@@ -63,8 +63,7 @@ async function blur(imagePath, targetPath, imageInfo) {
     }).write(targetPath);
 }
 
-async function main() {
-  const targetPath = "n:/Databases/OWN/Images/Moped training/pre-label";
+async function main(targetPath) {  
   await ensureDirExists(targetPath);
 
   const db_config = {
@@ -124,5 +123,13 @@ async function main() {
     }
   );
 }
-
-main();
+if(process.argv.length > 2){
+  let targetPath = process.argv[2];
+  if(fsSync.exists(targetPath, 
+      exists => exists
+      ? main(targetPath)
+      : console.error(`Error: Target path "${targetPath} not found."`)));
+} else { 
+  console.error(`Error: Please provide the target base folder as an argument. \nCategory folders will automatically be created under this folder.\n`);
+  console.error(`Example: ${__dirname}> node index "n:/Databases/OWN/Images/Moped training/pre-label"`);
+}
