@@ -9,6 +9,6 @@
   "private": true,
   "dependencies": {
     "jimp": "^0.8.5",
-    "mysql": "^2.17.1"
+    "mysql": "^2.18.0"
   }
 }
